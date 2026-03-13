@@ -18,7 +18,7 @@ use super::*;
 /// `baz`, but `foo::bar::baz` is an error, since `bar` is a recipe, not a
 /// module.
 pub(crate) struct InvocationParser<'src: 'run, 'run> {
-  arguments: &'run [&'run str],
+  arguments: &'run [String],
   next: usize,
   root: &'run Justfile<'src>,
 }
@@ -26,7 +26,7 @@ pub(crate) struct InvocationParser<'src: 'run, 'run> {
 impl<'src: 'run, 'run> InvocationParser<'src, 'run> {
   pub(crate) fn parse_invocations(
     root: &'run Justfile<'src>,
-    arguments: &'run [&'run str],
+    arguments: &'run [String],
   ) -> RunResult<'src, Vec<Invocation<'src, 'run>>> {
     let mut invocations = Vec::new();
 
@@ -156,7 +156,7 @@ impl<'src: 'run, 'run> InvocationParser<'src, 'run> {
           i += 1;
           value
         } else {
-          let Some(&value) = rest.get(i + 1) else {
+          let Some(value) = rest.get(i + 1) else {
             return Err(Error::OptionMissingValue {
               recipe: recipe.name(),
               option: switch,
@@ -181,7 +181,7 @@ impl<'src: 'run, 'run> InvocationParser<'src, 'run> {
           break;
         };
         let group = &mut arguments[index];
-        group.push((*argument).into());
+        group.push(argument.clone());
         if !recipe.parameters[index].kind.is_variadic() {
           positional_index += 1;
         }
@@ -297,10 +297,13 @@ impl<'src: 'run, 'run> InvocationParser<'src, 'run> {
   }
 
   fn next(&self) -> Option<&'run str> {
-    self.arguments.get(self.next).copied()
+    self
+      .arguments
+      .get(self.next)
+      .map(|argument| argument.as_str())
   }
 
-  fn rest(&self) -> &[&'run str] {
+  fn rest(&self) -> &[String] {
     &self.arguments[self.next..]
   }
 }
@@ -325,7 +328,8 @@ mod tests {
   fn single_no_arguments() {
     let justfile = testing::compile("foo:");
 
-    let invocations = InvocationParser::parse_invocations(&justfile, &["foo"]).unwrap();
+    let arguments = ["foo".into()];
+    let invocations = InvocationParser::parse_invocations(&justfile, &arguments).unwrap();
 
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].recipe.namepath(), "foo");
@@ -336,7 +340,8 @@ mod tests {
   fn single_with_argument() {
     let justfile = testing::compile("foo bar:");
 
-    let invocations = InvocationParser::parse_invocations(&justfile, &["foo", "baz"]).unwrap();
+    let arguments = ["foo".into(), "baz".into()];
+    let invocations = InvocationParser::parse_invocations(&justfile, &arguments).unwrap();
 
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].recipe.namepath(), "foo");
@@ -347,8 +352,9 @@ mod tests {
   fn single_argument_count_mismatch() {
     let justfile = testing::compile("foo bar:");
 
+    let arguments = ["foo".into()];
     assert_matches!(
-      InvocationParser::parse_invocations(&justfile, &["foo"]).unwrap_err(),
+      InvocationParser::parse_invocations(&justfile, &arguments).unwrap_err(),
       Error::PositionalArgumentCountMismatch {
         recipe: _,
         found: 0,
@@ -363,8 +369,9 @@ mod tests {
   fn single_unknown() {
     let justfile = testing::compile("foo:");
 
+    let arguments = ["bar".into()];
     assert_matches!(
-      InvocationParser::parse_invocations(&justfile, &["bar"]).unwrap_err(),
+      InvocationParser::parse_invocations(&justfile, &arguments).unwrap_err(),
       Error::UnknownRecipe {
         recipe,
         suggestion: None
@@ -376,8 +383,9 @@ mod tests {
   fn multiple_unknown() {
     let justfile = testing::compile("foo:");
 
+    let arguments = ["bar".into(), "baz".into()];
     assert_matches!(
-      InvocationParser::parse_invocations(&justfile, &["bar", "baz"]).unwrap_err(),
+      InvocationParser::parse_invocations(&justfile, &arguments).unwrap_err(),
       Error::UnknownRecipe {
         recipe,
         suggestion: None
@@ -395,8 +403,9 @@ mod tests {
     fs::write(tempdir.path().join("foo/mod.just"), "bar:").unwrap();
     let compilation = Compiler::compile(&Config::default(), &loader, &path).unwrap();
 
+    let arguments = ["foo".into(), "bar".into()];
     let invocations =
-      InvocationParser::parse_invocations(&compilation.justfile, &["foo", "bar"]).unwrap();
+      InvocationParser::parse_invocations(&compilation.justfile, &arguments).unwrap();
 
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].recipe.namepath(), "foo::bar");
@@ -413,8 +422,9 @@ mod tests {
     fs::write(tempdir.path().join("foo/mod.just"), "bar:").unwrap();
     let compilation = Compiler::compile(&Config::default(), &loader, &path).unwrap();
 
+    let arguments = ["foo".into(), "zzz".into()];
     assert_matches!(
-      InvocationParser::parse_invocations(&compilation.justfile, &["foo", "zzz"]).unwrap_err(),
+      InvocationParser::parse_invocations(&compilation.justfile, &arguments).unwrap_err(),
       Error::UnknownRecipe {
         recipe,
         suggestion: None
@@ -436,8 +446,9 @@ mod tests {
     )
     .unwrap();
 
+    let arguments = ["foo::zzz".into()];
     assert_matches!(
-      InvocationParser::parse_invocations(&compilation.justfile, &["foo::zzz"]).unwrap_err(),
+      InvocationParser::parse_invocations(&compilation.justfile, &arguments).unwrap_err(),
       Error::UnknownRecipe {
         recipe,
         suggestion: None
@@ -459,8 +470,9 @@ mod tests {
     )
     .unwrap();
 
+    let arguments = ["foo::bar::baz".into()];
     assert_matches!(
-      InvocationParser::parse_invocations(&compilation.justfile, &["foo::bar::baz"]).unwrap_err(),
+      InvocationParser::parse_invocations(&compilation.justfile, &arguments).unwrap_err(),
       Error::ExpectedSubmoduleButFoundRecipe {
         path,
       } if path == "foo::bar",
@@ -543,11 +555,18 @@ BAZ +Z:
 ",
     );
 
-    let invocations = InvocationParser::parse_invocations(
-      &justfile,
-      &["BAR", "0", "FOO", "1", "2", "BAZ", "3", "4", "5"],
-    )
-    .unwrap();
+    let arguments = [
+      "BAR".into(),
+      "0".into(),
+      "FOO".into(),
+      "1".into(),
+      "2".into(),
+      "BAZ".into(),
+      "3".into(),
+      "4".into(),
+      "5".into(),
+    ];
+    let invocations = InvocationParser::parse_invocations(&justfile, &arguments).unwrap();
 
     assert_eq!(invocations.len(), 3);
     assert_eq!(invocations[0].recipe.namepath(), "BAR");
@@ -577,8 +596,8 @@ foo bar:
       ",
     );
 
-    let invocations =
-      InvocationParser::parse_invocations(&justfile, &["foo", "--bar", "baz"]).unwrap();
+    let arguments = ["foo".into(), "--bar".into(), "baz".into()];
+    let invocations = InvocationParser::parse_invocations(&justfile, &arguments).unwrap();
 
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].recipe.namepath(), "foo");
@@ -594,8 +613,8 @@ foo baz bar:
       ",
     );
 
-    let invocations =
-      InvocationParser::parse_invocations(&justfile, &["foo", "qux", "--bar", "baz"]).unwrap();
+    let arguments = ["foo".into(), "qux".into(), "--bar".into(), "baz".into()];
+    let invocations = InvocationParser::parse_invocations(&justfile, &arguments).unwrap();
 
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].recipe.namepath(), "foo");
@@ -614,8 +633,8 @@ foo baz qux='qux' bar='bar':
       ",
     );
 
-    let invocations =
-      InvocationParser::parse_invocations(&justfile, &["foo", "--", "--bar"]).unwrap();
+    let arguments = ["foo".into(), "--".into(), "--bar".into()];
+    let invocations = InvocationParser::parse_invocations(&justfile, &arguments).unwrap();
 
     assert_eq!(invocations.len(), 1);
     assert_eq!(invocations[0].recipe.namepath(), "foo");

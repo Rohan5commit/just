@@ -36,7 +36,7 @@ pub(crate) struct Recipe<'src, D = Dependency<'src>> {
   pub(crate) shebang: bool,
 }
 
-impl Recipe<'_> {
+impl<'src> Recipe<'src> {
   pub(crate) fn module_path(&self) -> &str {
     let namepath = self.namepath();
     &namepath[0..namepath.rfind("::").unwrap_or_default()]
@@ -48,6 +48,40 @@ impl Recipe<'_> {
 
   pub(crate) fn spaced_namepath(&self) -> String {
     self.namepath().replace("::", " ")
+  }
+
+  pub(crate) fn referenced_variables(&self) -> BTreeSet<&'src str> {
+    let mut variables = BTreeSet::new();
+
+    for parameter in &self.parameters {
+      if let Some(default) = &parameter.default {
+        for var in default.variables() {
+          variables.insert(var.lexeme());
+        }
+      }
+    }
+
+    for dependency in &self.dependencies {
+      for group in &dependency.arguments {
+        for arg in group {
+          for var in arg.variables() {
+            variables.insert(var.lexeme());
+          }
+        }
+      }
+    }
+
+    for line in &self.body {
+      for fragment in &line.fragments {
+        if let Fragment::Interpolation { expression } = fragment {
+          for var in expression.variables() {
+            variables.insert(var.lexeme());
+          }
+        }
+      }
+    }
+
+    variables
   }
 }
 

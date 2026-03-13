@@ -74,6 +74,59 @@ impl<'src> Justfile<'src> {
     )
   }
 
+  fn needed_variables<'run>(
+    &'run self,
+    invocations: &[Invocation<'src, 'run>],
+  ) -> BTreeSet<&'src str> {
+    let mut needed = BTreeSet::new();
+
+    for assignment in self.assignments.values() {
+      if assignment.export || self.settings.export {
+        needed.insert(assignment.name.lexeme());
+      }
+    }
+
+    let my_path = &self.module_path;
+
+    let mut all_recipes = Vec::new();
+    let mut stack = invocations
+      .iter()
+      .map(|invocation| invocation.recipe)
+      .collect::<Vec<&Recipe>>();
+    let mut visited = BTreeSet::new();
+
+    while let Some(recipe) = stack.pop() {
+      // todo: is this wrong? recipes may be in different modules but have the same name
+      if !visited.insert(recipe.name()) {
+        continue;
+      }
+      all_recipes.push(recipe);
+      for dependency in &recipe.dependencies {
+        stack.push(&dependency.recipe);
+      }
+    }
+
+    for recipe in all_recipes {
+      if recipe.module_path() == my_path {
+        needed.extend(recipe.referenced_variables());
+      }
+    }
+
+    let mut work: Vec<&str> = needed.iter().copied().collect();
+    while let Some(var) = work.pop() {
+      if let Some(assignment) = self.assignments.get(var) {
+        for referenced in assignment.value.variables() {
+          let name = referenced.lexeme();
+          if needed.insert(name) {
+            work.push(name);
+          }
+        }
+      }
+    }
+
+    needed
+  }
+
   fn evaluate_scopes<'run>(
     &'run self,
     arena: &'run Arena<Scope<'src, 'run>>,
@@ -82,14 +135,18 @@ impl<'src> Justfile<'src> {
     root: &'run Scope<'src, 'run>,
     scopes: &mut BTreeMap<String, (&'run Self, &'run Scope<'src, 'run>)>,
     search: &'run Search,
+    invocations: Option<&[Invocation<'src, 'run>]>,
   ) -> RunResult<'src> {
-    let scope = Evaluator::evaluate_assignments(config, dotenv, self, root, search)?;
+    let needed = invocations.map(|invocations| self.needed_variables(invocations));
+
+    let scope =
+      Evaluator::evaluate_assignments(config, dotenv, self, root, search, needed.as_ref())?;
 
     let scope = arena.alloc(scope);
     scopes.insert(self.module_path.clone(), (self, scope));
 
     for module in self.modules.values() {
-      module.evaluate_scopes(arena, config, dotenv, scope, scopes, search)?;
+      module.evaluate_scopes(arena, config, dotenv, scope, scopes, search, invocations)?;
     }
 
     Ok(())
@@ -123,11 +180,98 @@ impl<'src> Justfile<'src> {
     let root = Scope::root();
     let arena = Arena::new();
     let mut scopes = BTreeMap::new();
-    self.evaluate_scopes(&arena, config, &dotenv, &root, &mut scopes, search)?;
+
+    if false && self.settings.lazy && matches!(config.subcommand, Subcommand::Run { .. }) {
+      let invocations = InvocationParser::parse_invocations(self, &arguments)?;
+
+      self.evaluate_scopes(
+        &arena,
+        config,
+        &dotenv,
+        &root,
+        &mut scopes,
+        search,
+        Some(&invocations),
+      )?;
+
+      if config.one && invocations.len() > 1 {
+        return Err(Error::ExcessInvocations {
+          invocations: invocations.len(),
+        });
+      }
+
+      let ran = Ran::default();
+      for invocation in invocations {
+        Self::run_recipe(
+          &invocation.arguments,
+          config,
+          &dotenv,
+          false,
+          &ran,
+          invocation.recipe,
+          &scopes,
+          search,
+        )?;
+      }
+
+      return Ok(());
+    }
+
+    let invocations = if matches!(
+      config.subcommand,
+      Subcommand::Choose { .. } | Subcommand::Run { .. }
+    ) {
+      Some(InvocationParser::parse_invocations(self, arguments)?)
+    } else {
+      None
+    };
+
+    let needed = match &config.subcommand {
+      // based on invocations
+      Subcommand::Choose { .. } | Subcommand::Run { .. } => {
+        if self.settings.lazy {
+          todo!()
+        } else {
+          None
+        }
+      }
+      // only exports
+      Subcommand::Command { .. } => todo!(),
+      // only the variable which is being
+      Subcommand::Evaluate { variable, .. } => todo!(),
+      _ => unreachable!(),
+    };
+
+    self.evaluate_scopes(&arena, config, &dotenv, &root, &mut scopes, search, needed)?;
 
     let scope = scopes.get(&self.module_path).unwrap().1;
 
     match &config.subcommand {
+      Subcommand::Choose { .. } | Subcommand::Run { .. } => {
+        let invocations = invocations.unwrap();
+
+        if config.one && invocations.len() > 1 {
+          return Err(Error::ExcessInvocations {
+            invocations: invocations.len(),
+          });
+        }
+
+        let ran = Ran::default();
+        for invocation in invocations {
+          Self::run_recipe(
+            &invocation.arguments,
+            config,
+            &dotenv,
+            false,
+            &ran,
+            invocation.recipe,
+            &scopes,
+            search,
+          )?;
+        }
+
+        Ok(())
+      }
       Subcommand::Command {
         binary, arguments, ..
       } => {
@@ -167,7 +311,7 @@ impl<'src> Justfile<'src> {
           return Err(Error::Interrupted { signal });
         }
 
-        return Ok(());
+        Ok(())
       }
       Subcommand::Evaluate { variable, .. } => {
         if let Some(variable) = variable {
@@ -194,36 +338,10 @@ impl<'src> Justfile<'src> {
           }
         }
 
-        return Ok(());
+        Ok(())
       }
-      _ => {}
+      _ => unreachable!(),
     }
-
-    let arguments = arguments.iter().map(String::as_str).collect::<Vec<&str>>();
-
-    let invocations = InvocationParser::parse_invocations(self, &arguments)?;
-
-    if config.one && invocations.len() > 1 {
-      return Err(Error::ExcessInvocations {
-        invocations: invocations.len(),
-      });
-    }
-
-    let ran = Ran::default();
-    for invocation in invocations {
-      Self::run_recipe(
-        &invocation.arguments,
-        config,
-        &dotenv,
-        false,
-        &ran,
-        invocation.recipe,
-        &scopes,
-        search,
-      )?;
-    }
-
-    Ok(())
   }
 
   pub(crate) fn check_unstable(&self, config: &Config) -> RunResult<'src> {

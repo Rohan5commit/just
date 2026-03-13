@@ -1336,6 +1336,10 @@ impl<'run, 'src> Parser<'run, 'src> {
       Keyword::Fallback => Some(Setting::Fallback(self.parse_set_bool()?)),
       Keyword::Guards => Some(Setting::Guards(self.parse_set_bool()?)),
       Keyword::IgnoreComments => Some(Setting::IgnoreComments(self.parse_set_bool()?)),
+      Keyword::Lazy => {
+        self.unstable_features.insert(UnstableFeature::LazySetting);
+        Some(Setting::Lazy(self.parse_set_bool()?))
+      }
       Keyword::NoExitMessage => Some(Setting::NoExitMessage(self.parse_set_bool()?)),
       Keyword::PositionalArguments => Some(Setting::PositionalArguments(self.parse_set_bool()?)),
       Keyword::Quiet => Some(Setting::Quiet(self.parse_set_bool()?)),
