@@ -42,7 +42,7 @@ Yay, all your tests passed!
 
 - `just` 是一个命令运行器，而不是一个构建系统，所以它避免了许多 [`make` 的复杂性和特异性](#just-避免了-make-的哪些特异性)。不需要 `.PHONY` 配方!
 
-- 支持 Linux、MacOS 和 Windows，而且无需额外的依赖。(尽管如果你的系统没有 `sh`，你需要 [选择一个不同的 Shell](#shell))。
+- 支持 Linux、macOS 和 Windows，而且无需额外的依赖。(尽管如果你的系统没有 `sh`，你需要 [选择一个不同的 Shell](#shell))。
 
 - 错误具体且富有参考价值，语法错误将会与产生它们的上下文一起被报告。
 
@@ -69,7 +69,7 @@ Yay, all your tests passed!
 
 ### 预备知识
 
-`just` 应该可以在任何有合适的 `sh` 的系统上运行，包括 Linux、MacOS 和 BSD。
+`just` 应该可以在任何有合适的 `sh` 的系统上运行，包括 Linux、macOS 和 BSD。
 
 在 Windows 上，`just` 可以使用 [Git for Windows](https://git-scm.com)、[GitHub Desktop](https://desktop.github.com) 或 [Cygwin](http://www.cygwin.com) 所提供的 `sh`。
 
@@ -262,9 +262,9 @@ list:
 
 ### 预制二进制文件
 
-Linux、MacOS 和 Windows 的预制二进制文件可以在 [发布页](https://github.com/casey/just/releases) 上找到。
+Linux、macOS 和 Windows 的预制二进制文件可以在 [发布页](https://github.com/casey/just/releases) 上找到。
 
-你也可以在 Linux、MacOS 或 Windows 上使用下面的命令来下载最新的版本，只需将 `DEST` 替换为你想安装 `just` 的目录即可：
+你也可以在 Linux、macOS 或 Windows 上使用下面的命令来下载最新的版本，只需将 `DEST` 替换为你想安装 `just` 的目录即可：
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to DEST
@@ -1251,7 +1251,7 @@ The executable is at: /bin/just
 | `[no-cd]`<sup>1.9.0</sup>           | 在执行配方之前不要改变目录。           |
 | `[no-exit-message]`<sup>1.7.0</sup> | 如果配方执行失败，不要打印错误信息。   |
 | `[linux]`<sup>1.8.0</sup>           | 在Linux上启用配方。                    |
-| `[macos]`<sup>1.8.0</sup>           | 在MacOS上启用配方。                    |
+| `[macos]`<sup>1.8.0</sup>           | 在 macOS 上启用配方。                 |
 | `[unix]`<sup>1.8.0</sup>            | 在Unixes上启用配方。                   |
 | `[windows]`<sup>1.8.0</sup>         | 在Windows上启用配方。                  |
 | `[private]`<sup>1.10.0</sup>        | 参见 [私有配方](#私有配方). |
@@ -1769,7 +1769,7 @@ Hola from a nushell script!
 Hello from ruby!
 ```
 
-在类似 Unix 的操作系统中，包括 Linux 和 MacOS，Shebang 配方的执行方式是将配方主体保存到临时目录下的一个文件中，将该文件标记为可执行文件，然后执行它。操作系统将 Shebang 行解析为一个命令行并调用它，包括文件的路径。例如，如果一个配方以 `#!/usr/bin/env bash` 开头，操作系统运行的最终命令将是 `/usr/bin/env bash /tmp/PATH_TO_SAVED_RECIPE_BODY` 之类。请记住，不同的操作系统对 Shebang 行的分割方式不同。
+在类似 Unix 的操作系统中，包括 Linux 和 macOS，Shebang 配方的执行方式是将配方主体保存到临时目录下的一个文件中，将该文件标记为可执行文件，然后执行它。操作系统将 Shebang 行解析为一个命令行并调用它，包括文件的路径。例如，如果一个配方以 `#!/usr/bin/env bash` 开头，操作系统运行的最终命令将是 `/usr/bin/env bash /tmp/PATH_TO_SAVED_RECIPE_BODY` 之类。请记住，不同的操作系统对 Shebang 行的分割方式不同。
 
 Windows 不支持 Shebang 行。在 Windows 上，`just` 将 Shebang 行分割成命令和参数，将配方主体保存到一个文件中，并调用分割后的命令和参数，同时将保存的配方主体的路径作为最后一个参数。
 
